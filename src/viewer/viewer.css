@@ -1,0 +1,102 @@
+:root {
+  --bg: #f4f4f2;
+  --fg: #222;
+  --muted: #666;
+  --border: #ccc;
+  --error-bg: #fde8e6;
+  --error-fg: #8a1c12;
+  /* Graphviz draws the map for a light page; dark mode inverts it, keeping hues. */
+  --map-filter: none;
+  color-scheme: light;
+}
+/* Dark when the system is dark and the toggle isn't on Light, or when it is on Dark. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1e1f22;
+    --fg: #ddd;
+    --muted: #999;
+    --border: #444;
+    --error-bg: #4a1f1b;
+    --error-fg: #ffcdc7;
+    --map-filter: invert(1) hue-rotate(180deg);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1e1f22;
+  --fg: #ddd;
+  --muted: #999;
+  --border: #444;
+  --error-bg: #4a1f1b;
+  --error-fg: #ffcdc7;
+  --map-filter: invert(1) hue-rotate(180deg);
+  color-scheme: dark;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px system-ui, sans-serif;
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+}
+#file {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.actions {
+  display: flex;
+  gap: 6px;
+}
+button {
+  font: inherit;
+  padding: 2px 10px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+#errors {
+  padding: 6px 10px;
+  white-space: pre-wrap;
+  font-family: ui-monospace, monospace;
+  background: var(--error-bg);
+  color: var(--error-fg);
+}
+#map {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+#map svg {
+  display: block;
+  filter: var(--map-filter);
+}
+#map g.node,
+#map g.cluster {
+  cursor: pointer;
+}
+/* Graphviz sets strokes as attributes, which CSS overrides. Nodes with a tooltip nest their
+   shape in an <a>, and clusters and nodes are siblings, so a descendant selector is safe. */
+#map .selected path,
+#map .selected polygon,
+#map .selected ellipse {
+  /* Inside the map, so dark mode inverts it to a light blue too. */
+  stroke: #1a73e8;
+  stroke-width: 6px;
+}

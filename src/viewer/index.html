@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>argdown-preview</title>
+    <link rel="stylesheet" href="viewer.css" />
+  </head>
+  <body>
+    <header>
+      <span id="file">waiting for helix…</span>
+      <span class="actions">
+        <button id="theme" title="Switch between following the system, light and dark">Auto</button>
+        <button id="fit" title="Fit the map to the window (f)">Fit</button>
+        <button id="export" title="Download the map as SVG">SVG</button>
+      </span>
+    </header>
+    <div id="errors" hidden></div>
+    <div id="map"></div>
+    <script type="module" src="viewer.js"></script>
+  </body>
+</html>
