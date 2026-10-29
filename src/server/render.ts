@@ -1,5 +1,5 @@
 // Runs the Argdown pipeline the CLI's `argdown map` runs, on text held in memory, after expanding
-// `@include`s.
+// `@include`s, and leaves off the map what the viewer hid.
 import {
   ArgdownApplication,
   ArgumentSelectionPlugin,
@@ -9,6 +9,7 @@ import {
   DotExportPlugin,
   ExplodeArgumentsPlugin,
   GroupPlugin,
+  IArgdownPlugin,
   IArgdownRequest,
   IArgdownResponse,
   MapPlugin,
@@ -19,7 +20,22 @@ import {
   StatementSelectionPlugin,
 } from "@argdown/core";
 import { buildIndex, MapIndex } from "../shared/locate.js";
+import { Exclusions, Hidden, toExclude } from "./hide.js";
 import { expand, Read, toSource } from "./include.js";
+
+// Hiding adds to the selection's exclusions. It runs after the frontmatter is merged in, which
+// would otherwise overwrite them item by item.
+const EXCLUDE = "argdownPreviewExclude";
+const hidePlugin: IArgdownPlugin = {
+  name: "HidePlugin",
+  run: (request: any) => {
+    const exclude: Exclusions | undefined = request[EXCLUDE];
+    if (!exclude) return;
+    const selection = (request.selection ??= {});
+    selection.excludeStatements = [...(selection.excludeStatements ?? []), ...exclude.statements];
+    selection.excludeArguments = [...(selection.excludeArguments ?? []), ...exclude.arguments];
+  },
+};
 
 const app = new ArgdownApplication();
 app.addPlugin(new ParserPlugin(), "parse-input");
@@ -27,6 +43,7 @@ app.addPlugin(new DataPlugin(), "build-model");
 app.addPlugin(new ModelPlugin(), "build-model");
 app.addPlugin(new ExplodeArgumentsPlugin(), "build-model");
 app.addPlugin(new RegroupPlugin(), "build-model");
+app.addPlugin(hidePlugin, "build-map");
 app.addPlugin(new PreselectionPlugin(), "build-map");
 app.addPlugin(new StatementSelectionPlugin(), "build-map");
 app.addPlugin(new ArgumentSelectionPlugin(), "build-map");
@@ -73,20 +90,27 @@ const clone = (config: IArgdownRequest): IArgdownRequest => {
 };
 
 // `config` is the argdown.config.* request; the root's frontmatter overrides it, as in the CLI.
-export const render = (rootUri: string, read: Read, config: IArgdownRequest = {}): Rendered => {
+export const render = (rootUri: string, read: Read, config: IArgdownRequest = {}, hidden: Hidden[] = []): Rendered => {
   const expanded = expand(rootUri, read);
   const { segments, includes } = expanded;
-  const request: IArgdownRequest = {
-    ...clone(config),
-    input: expanded.text,
-    process: PROCESS,
-    throwExceptions: false,
-    logLevel: "none",
+  // With something hidden, the map is built twice: once to see what to leave off, then without it.
+  const run = (exclude?: Exclusions) => {
+    const request: IArgdownRequest = {
+      ...clone(config),
+      input: expanded.text,
+      process: PROCESS,
+      throwExceptions: false,
+      logLevel: "none",
+      ...(exclude ? { [EXCLUDE]: exclude } : {}),
+    };
+    return { request, response: app.run(request) };
   };
   const errors: RenderError[] = [...expanded.errors];
+  let request: IArgdownRequest;
   let response: IArgdownResponse;
   try {
-    response = app.run(request);
+    ({ request, response } = run());
+    if (hidden.length > 0 && response.map) ({ request, response } = run(toExclude(response, hidden)));
   } catch (e) {
     errors.push({ message: e instanceof Error ? e.message : String(e) });
     return { ok: false, errors, includes };

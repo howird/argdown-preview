@@ -1,5 +1,6 @@
 // The language server Helix runs: renders each edit to the preview, selects the node under the
-// last hover on `argdown.showInPreview`, and opens the source of a clicked node in the editor.
+// last hover on `argdown.showInPreview`, opens the source of a clicked node in the editor, and
+// finds where statements and arguments are defined.
 //
 // The preview shows a root document and the files it includes. Editing, hovering or opening one of
 // those parts keeps that root up; any other document becomes the root.
@@ -10,14 +11,16 @@ import { TextDocument } from "vscode-languageserver-textdocument";
 import {
   createConnection,
   Hover,
+  Location,
   MarkupKind,
   MessageType,
   ProposedFeatures,
   TextDocuments,
   TextDocumentSyncKind,
 } from "vscode-languageserver/node";
-import { svgIdAt, Target } from "../shared/locate.js";
+import { definitionsAt, Location as SourceLocation, svgIdAt, Target } from "../shared/locate.js";
 import { configFor } from "./config.js";
+import { Hidden } from "./hide.js";
 import { PreviewServer } from "./preview.js";
 import { render, Rendered } from "./render.js";
 
@@ -52,6 +55,8 @@ export const runLanguageServer = (viewerDir: string) => {
   let current: string | undefined;
   const renders = new Map<string, Extract<Rendered, { ok: true }>>();
   const includes = new Map<string, Set<string>>();
+  // What the viewer hid from each root's map. It outlives the root's editor, until the server stops.
+  const hidden = new Map<string, Hidden[]>();
   let hover: { uri: string; line: number; column: number } | undefined;
   // Clicking the same node again moves on to its next occurrence.
   let lastClick: { svgId: string; occurrence: number } | undefined;
@@ -109,24 +114,44 @@ export const runLanguageServer = (viewerDir: string) => {
     }
   };
 
-  const preview = new PreviewServer(viewerDir, (svgId) => {
-    const target = current ? renders.get(current)?.index.targets[svgId] : undefined;
-    if (!current || !target || target.occurrences.length === 0) return;
-    const occurrence =
-      lastClick?.svgId === svgId ? (lastClick.occurrence + 1) % target.occurrences.length : 0;
-    lastClick = { svgId, occurrence };
-    const { uri, startLine, startColumn } = target.occurrences[occurrence];
-    const position = { line: startLine - 1, character: startColumn - 1 };
-    connection.window
-      .showDocument({ uri, takeFocus: true, selection: { start: position, end: position } })
-      .catch((e) => log(`showDocument failed: ${e}`));
+  // Re-renders the current root after the viewer hid or showed something.
+  const rehide = (change: (items: Hidden[]) => Hidden[]) => {
+    if (!current) return;
+    hidden.set(current, change(hidden.get(current) ?? []));
+    lastClick = undefined;
+    clearTimeout(timers.get(current));
+    timers.delete(current);
+    update(current).catch((e) => log(`render failed: ${e}`));
+  };
+
+  const preview = new PreviewServer(viewerDir, {
+    click: (svgId) => {
+      const target = current ? renders.get(current)?.index.targets[svgId] : undefined;
+      if (!current || !target || target.occurrences.length === 0) return;
+      const occurrence =
+        lastClick?.svgId === svgId ? (lastClick.occurrence + 1) % target.occurrences.length : 0;
+      lastClick = { svgId, occurrence };
+      const { uri, startLine, startColumn } = target.occurrences[occurrence];
+      const position = { line: startLine - 1, character: startColumn - 1 };
+      connection.window
+        .showDocument({ uri, takeFocus: true, selection: { start: position, end: position } })
+        .catch((e) => log(`showDocument failed: ${e}`));
+    },
+    hide: (svgId) => {
+      const target = current ? renders.get(current)?.index.targets[svgId] : undefined;
+      if (!target) return;
+      const { kind, title } = target;
+      rehide((items) => (items.some((h) => h.kind === kind && h.title === title) ? items : [...items, { kind, title }]));
+    },
+    unhide: (item) =>
+      rehide((items) => (item ? items.filter((h) => h.kind !== item.kind || h.title !== item.title) : [])),
   });
 
   const update = async (uri: string) => {
     if (!documents.get(uri)) return;
     const file = toPath(uri);
     const { config, error } = await configFor(file);
-    const rendered = render(uri, read, config);
+    const rendered = render(uri, read, config, hidden.get(uri));
     // The viewer names the file of an error that isn't in the root.
     const errors = rendered.errors.map(({ uri: from, ...e }) => (from && from !== uri ? { ...e, file: toPath(from) } : e));
     if (error) errors.unshift({ message: error });
@@ -138,7 +163,7 @@ export const runLanguageServer = (viewerDir: string) => {
     }
     syncWatchers();
     const last = renders.get(uri);
-    preview.show({ file, dot: last?.dot, vizJs: last?.vizJs, errors });
+    preview.show({ file, dot: last?.dot, vizJs: last?.vizJs, errors, hidden: hidden.get(uri) ?? [] });
   };
 
   const schedule = (part: string, delay: number) => {
@@ -169,6 +194,7 @@ export const runLanguageServer = (viewerDir: string) => {
       capabilities: {
         textDocumentSync: TextDocumentSyncKind.Incremental,
         hoverProvider: true,
+        definitionProvider: true,
         executeCommandProvider: { commands: [SHOW_IN_PREVIEW] },
       },
       serverInfo: { name: "argdown-preview" },
@@ -208,6 +234,13 @@ export const runLanguageServer = (viewerDir: string) => {
     return target ? { contents: { kind: MarkupKind.Markdown, value: describe(target) } } : null;
   });
 
+  connection.onDefinition(async ({ textDocument, position }): Promise<Location[]> => {
+    await flush(textDocument.uri);
+    const rendered = renders.get(rootFor(textDocument.uri));
+    if (!rendered) return [];
+    return definitionsAt(rendered.index, textDocument.uri, position.line + 1, position.character + 1).map(toLsp);
+  });
+
   connection.onExecuteCommand(async ({ command }) => {
     if (command !== SHOW_IN_PREVIEW || !hover) return;
     await flush(hover.uri);
@@ -232,6 +265,19 @@ const describe = (target: Target) => {
     target.kind === "argument" ? `<${target.title}>` : target.kind === "statement" ? `[${target.title}]` : target.title;
   return target.text ? `**${escape(title)}**: ${target.text}` : `**${escape(title)}**`;
 };
+
+// Argdown's end column is inclusive and 1-based, so it is the 0-based exclusive end. A location
+// clipped at the end of an included file's part runs to the start of the next line.
+const toLsp = (l: SourceLocation): Location => ({
+  uri: l.uri,
+  range: {
+    start: { line: l.startLine - 1, character: l.startColumn - 1 },
+    end:
+      l.endColumn === Number.MAX_SAFE_INTEGER
+        ? { line: l.endLine, character: 0 }
+        : { line: l.endLine - 1, character: l.endColumn },
+  },
+});
 
 const openInBrowser = (url: string) => {
   const command = process.platform === "darwin" ? "open" : "xdg-open";

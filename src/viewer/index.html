@@ -10,10 +10,13 @@
     <header>
       <span id="file">waiting for helix…</span>
       <span class="actions">
+        <button id="hide" title="Hide the selected node or group, with what supports or attacks it (h)" disabled>Hide</button>
+        <button id="hidden" title="Show what you hid" hidden>Hidden</button>
         <button id="theme" title="Switch between light, dark and following the system">Light</button>
         <button id="fit" title="Fit the map to the window (f)">Fit</button>
         <button id="export" title="Download the map as SVG">SVG</button>
       </span>
+      <div id="hidden-list" hidden></div>
     </header>
     <div id="errors" hidden></div>
     <div id="map"></div>

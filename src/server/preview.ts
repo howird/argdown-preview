@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import http from "node:http";
 import { AddressInfo } from "node:net";
 import path from "node:path";
+import type { Hidden } from "./hide.js";
 
 // What the viewer shows. `dot` is the last map that rendered; `errors` are from the latest edit.
 export interface ViewState {
@@ -11,6 +12,17 @@ export interface ViewState {
   vizJs?: Record<string, unknown>;
   // `file` is set when the error is in another file than the previewed one, such as an included one.
   errors: { file?: string; line?: number; column?: number; message: string }[];
+  // What is hidden from this file's map, in the order it was hidden.
+  hidden: Hidden[];
+}
+
+export interface Handlers {
+  // A click on the map's element `svgId`.
+  click: (svgId: string) => void;
+  // Hide the element `svgId`.
+  hide: (svgId: string) => void;
+  // Show `item` again, or everything when it is undefined.
+  unhide: (item: Hidden | undefined) => void;
 }
 
 const TYPES: Record<string, string> = {
@@ -27,7 +39,7 @@ export class PreviewServer {
 
   constructor(
     private viewerDir: string,
-    private onClick: (svgId: string) => void,
+    private handlers: Handlers,
   ) {
     this.server = http.createServer((req, res) => this.handle(req, res).catch((e) => fail(res, 500, String(e))));
   }
@@ -80,13 +92,27 @@ export class PreviewServer {
       if (this.selected) res.write(`event: select\ndata: ${JSON.stringify({ svgId: this.selected })}\n\n`);
       return;
     }
-    if (url.pathname === "/click" && req.method === "POST") {
+    if (req.method === "POST" && ["/click", "/hide", "/unhide"].includes(url.pathname)) {
       let body = "";
       for await (const chunk of req) body += chunk;
-      const { svgId } = JSON.parse(body);
-      if (typeof svgId !== "string") return fail(res, 400, "missing svgId");
-      this.selected = svgId;
-      this.onClick(svgId);
+      const data = JSON.parse(body || "{}");
+      if (url.pathname === "/unhide") {
+        const item = data.kind === undefined ? undefined : { kind: data.kind, title: data.title };
+        if (item && !(["statement", "argument", "group"].includes(item.kind) && typeof item.title === "string")) {
+          return fail(res, 400, "bad item");
+        }
+        this.handlers.unhide(item);
+      } else {
+        if (typeof data.svgId !== "string") return fail(res, 400, "missing svgId");
+        if (url.pathname === "/click") {
+          this.selected = data.svgId;
+          this.handlers.click(data.svgId);
+        } else {
+          // Node ids change when the map is built without it.
+          this.selected = undefined;
+          this.handlers.hide(data.svgId);
+        }
+      }
       res.writeHead(204).end();
       return;
     }

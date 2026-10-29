@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { render } from "../src/server/render.js";
-import { MapIndex, svgIdAt } from "../src/shared/locate.js";
+import { definitionsAt, MapIndex, svgIdAt } from "../src/shared/locate.js";
 
 const uri = new URL("fixtures/cats.argdown", import.meta.url).href;
 const source = readFileSync(new URL(uri), "utf8");
@@ -79,6 +79,40 @@ describe("occurrences", () => {
   });
 });
 
+describe("definitionsAt", () => {
+  const lines = (line: number, column: number, at = index, from = uri) =>
+    definitionsAt(at, from, line, column).map((l) => [l.uri === uri ? "" : l.uri.split("/").pop(), l.startLine]);
+
+  test("a reference to a statement goes to its definition", () => {
+    expect(lines(10, 3)).toEqual([["", 5]]);
+    expect(lines(18, 7)).toEqual([["", 5]]);
+  });
+
+  test("a reference to an argument goes to its description, then its premise-conclusion structure", () => {
+    expect(lines(13, 3)).toEqual([
+      ["", 6],
+      ["", 15],
+    ]);
+  });
+
+  test("a statement that isn't on the map has a definition too", () => {
+    expect(lines(15, 6)).toEqual([["", 15]]);
+  });
+
+  test("a statement defined twice lists the canonical definition first", () => {
+    const twice = renderText("[A]: First text.\n\n[A]: Second text. {isCanonical: true}\n  + [B]: b\n\n[A]\n");
+    if (!twice.ok) throw new Error(JSON.stringify(twice.errors));
+    expect(lines(6, 2, twice.index)).toEqual([
+      ["", 3],
+      ["", 1],
+    ]);
+  });
+
+  test("outside any statement or argument there is none", () => {
+    expect(lines(1, 1)).toEqual([]);
+  });
+});
+
 describe("render", () => {
   test("frontmatter overrides the config", () => {
     const config = { dot: { graphVizSettings: { rankdir: "LR" } } } as any;
@@ -143,6 +177,10 @@ describe("includes", () => {
       [part, 12],
       [objections, 3],
     ]);
+  });
+
+  test("a reference in a part goes to the definition in the root", () => {
+    expect(definitionsAt(index, objections, 3, 3).map((l) => [l.uri, l.startLine])).toEqual([[main, 9]]);
   });
 
   test("an error in a part reports the part's file and line", () => {

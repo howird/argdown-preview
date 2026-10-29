@@ -109,6 +109,17 @@ afterAll(async () => {
   server?.kill();
 });
 
+// The next render event after `count` events had arrived.
+const nextRender = (count: number) =>
+  eventually(() => {
+    const s = events.slice(count).find((e) => e.event === "render");
+    if (!s) throw new Error("no render yet");
+    return s.data;
+  });
+
+// The SVG id of the node whose tooltip starts with `text`.
+const nodeId = (dot: string, text: string) => dot.match(new RegExp(`(n\\d+) \\[[^\\n]*tooltip="${text}`))?.[1];
+
 test("serves the viewer", async () => {
   const page = await fetch(url).then((r) => r.text());
   expect(page).toContain("viewer.js");
@@ -148,6 +159,31 @@ test("clicking a node opens its occurrences in turn", async () => {
   expect(shown[0]).toMatchObject({ uri, takeFocus: true });
 });
 
+test("go to definition finds where a statement is defined", async () => {
+  const locations: any = await rpc.sendRequest("textDocument/definition", {
+    textDocument: { uri },
+    position: { line: 9, character: 2 },
+  });
+  // Argdown's range for a statement takes in the relations under it.
+  expect(locations).toEqual([{ uri, range: { start: { line: 4, character: 0 }, end: { line: 5, character: 42 } } }]);
+});
+
+test("hiding a node lays out the map without it, until it is shown again", async () => {
+  const before = last("render").dot;
+  const allergies = nodeId(before, "Many people")!;
+  let count = events.length;
+  await fetch(`${url}/hide`, { method: "POST", body: JSON.stringify({ svgId: allergies }) });
+  const hidden = await nextRender(count);
+  expect(hidden.hidden).toEqual([{ kind: "argument", title: "Allergies" }]);
+  expect(nodeId(hidden.dot, "Many people")).toBeUndefined();
+  expect(nodeId(hidden.dot, "Cats purr")).toBeDefined();
+  count = events.length;
+  await fetch(`${url}/unhide`, { method: "POST", body: JSON.stringify({ kind: "argument", title: "Allergies" }) });
+  const shownAgain = await nextRender(count);
+  expect(shownAgain.hidden).toEqual([]);
+  expect(shownAgain.dot).toBe(before);
+});
+
 test("an edit with an error keeps the last map and reports the error", async () => {
   const before = last("render").dot;
   const count = events.length;
@@ -163,17 +199,6 @@ test("an edit with an error keeps the last map and reports the error", async () 
   expect(state.dot).toBe(before);
   expect(state.errors[0].line).toBe(23);
 });
-
-// The next render event after `count` events had arrived.
-const nextRender = (count: number) =>
-  eventually(() => {
-    const s = events.slice(count).find((e) => e.event === "render");
-    if (!s) throw new Error("no render yet");
-    return s.data;
-  });
-
-// The SVG id of the node whose tooltip starts with `text`.
-const nodeId = (dot: string, text: string) => dot.match(new RegExp(`(n\\d+) \\[[^\\n]*tooltip="${text}`))?.[1];
 
 const open = (uri: string, text: string) =>
   rpc.sendNotification("textDocument/didOpen", { textDocument: { uri, languageId: "argdown", version: 1, text } });
@@ -199,6 +224,16 @@ test("hover in a part describes its node", async () => {
     position: { line: 4, character: 3 },
   });
   expect(hover.contents.value).toBe("**\\<Purr\\>**: Cats purr when they are happy.");
+});
+
+test("go to definition from a part finds the definition in the root", async () => {
+  const locations: any = await rpc.sendRequest("textDocument/definition", {
+    textDocument: { uri: includeUri("objections.argdown") },
+    position: { line: 2, character: 2 },
+  });
+  expect(locations).toEqual([
+    expect.objectContaining({ uri: includeUri("main.argdown"), range: expect.objectContaining({ start: { line: 8, character: 0 } }) }),
+  ]);
 });
 
 test("clicking a node defined in a part opens the part", async () => {

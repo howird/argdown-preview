@@ -35,11 +35,22 @@ export interface Target {
   occurrences: Location[];
 }
 
+// A source range, and the range in the expanded text it was clipped from, which decides the
+// innermost of several that contain a position.
+interface Range {
+  location: Location;
+  whole: Omit<Location, "uri">;
+}
+
 export interface MapIndex {
   targets: Record<string, Target>;
   // Every source range that belongs to an element on the map; forward search picks the smallest.
-  // `whole` is the range in the expanded text it was clipped from, which decides the smallest.
-  ranges: { location: Location; whole: Omit<Location, "uri">; svgId: string }[];
+  ranges: (Range & { svgId: string })[];
+  // Where each statement and argument is defined, on the map or not, keyed `statement:Title` or
+  // `argument:Title`. The canonical definition comes first.
+  definitions: Record<string, Location[]>;
+  // Every place a statement or argument is written: its definitions and its references.
+  symbols: (Range & { key: string })[];
 }
 
 // A location in the expanded text.
@@ -88,6 +99,8 @@ const pieces = (span: Span, segments: Segment[]): Location[] => {
 export const buildIndex = (response: IArgdownResponse, segments: Segment[]): MapIndex => {
   const targets: Record<string, Target> = {};
   const ranges: MapIndex["ranges"] = [];
+  const definitions: MapIndex["definitions"] = {};
+  const symbols: MapIndex["symbols"] = [];
   // Occurrences are sorted while still in the expanded text, so their order holds across files.
   // An occurrence is where a jump lands, so only its first piece is kept.
   const add = (svgId: string, target: Omit<Target, "occurrences"> & { occurrences: Span[] }, extraRanges: Span[] = []) => {
@@ -147,7 +160,34 @@ export const buildIndex = (response: IArgdownResponse, segments: Segment[]): Map
   for (const node of response.map?.nodes ?? []) {
     visit(node);
   }
-  return { targets, ranges };
+
+  // Like `add`, for the definitions and every written occurrence of a statement or argument.
+  const addSymbol = (key: string, defined: Span[], written: Span[]) => {
+    definitions[key] = defined.flatMap((o) => pieces(o, segments).slice(0, 1));
+    for (const span of written) {
+      for (const location of pieces(span, segments)) {
+        symbols.push({ location, whole: span, key });
+      }
+    }
+  };
+  for (const ec of Object.values(response.statements ?? {})) {
+    const canonical = IEquivalenceClass.getCanonicalMember(ec);
+    const defined = ec.members.filter((m) => !m.isReference).flatMap((m) => toLocation(m) ?? []);
+    const written = ec.members.flatMap((m) => toLocation(m) ?? []);
+    addSymbol(`statement:${ec.title}`, ordered(canonical && toLocation(canonical), defined), written);
+  }
+  for (const argument of Object.values(response.arguments ?? {})) {
+    const pcs = argument.pcs.length > 0 ? toLocation(argument) : undefined;
+    const canonical = IArgument.getCanonicalMember(argument);
+    const defined = argument.members.filter((m) => !m.isReference).flatMap((m) => toLocation(m) ?? []);
+    const written = argument.members.flatMap((m) => toLocation(m) ?? []);
+    addSymbol(
+      `argument:${argument.title}`,
+      ordered((canonical && toLocation(canonical)) ?? pcs, pcs ? [...defined, pcs] : defined),
+      pcs ? [...written, pcs] : written,
+    );
+  }
+  return { targets, ranges, definitions, symbols };
 };
 
 const contains = (l: Span, line: number, column: number) =>
@@ -156,10 +196,10 @@ const contains = (l: Span, line: number, column: number) =>
 
 const size = (l: Span) => [l.endLine - l.startLine, l.endColumn - l.startColumn];
 
-// The SVG element for the innermost thing on the map at a 1-based line and column of `uri`.
-export const svgIdAt = (index: MapIndex, uri: string, line: number, column: number): string | undefined => {
-  let best: MapIndex["ranges"][number] | undefined;
-  for (const r of index.ranges) {
+// The innermost of `ranges` that contains a 1-based line and column of `uri`.
+const innermost = <R extends Range>(ranges: R[], uri: string, line: number, column: number): R | undefined => {
+  let best: R | undefined;
+  for (const r of ranges) {
     if (r.location.uri !== uri || !contains(r.location, line, column)) continue;
     if (!best) {
       best = r;
@@ -171,5 +211,15 @@ export const svgIdAt = (index: MapIndex, uri: string, line: number, column: numb
       best = r;
     }
   }
-  return best?.svgId;
+  return best;
+};
+
+// The SVG element for the innermost thing on the map at a 1-based line and column of `uri`.
+export const svgIdAt = (index: MapIndex, uri: string, line: number, column: number): string | undefined =>
+  innermost(index.ranges, uri, line, column)?.svgId;
+
+// Where the innermost statement or argument at a 1-based line and column of `uri` is defined.
+export const definitionsAt = (index: MapIndex, uri: string, line: number, column: number): Location[] => {
+  const symbol = innermost(index.symbols, uri, line, column);
+  return symbol ? index.definitions[symbol.key] : [];
 };

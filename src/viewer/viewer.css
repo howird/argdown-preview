@@ -45,6 +45,7 @@ body {
   font: 13px system-ui, sans-serif;
 }
 header {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -70,6 +71,41 @@ button {
   border: 1px solid var(--border);
   border-radius: 4px;
   cursor: pointer;
+}
+/* The list of hidden items, under the Hidden button. */
+#hidden-list:not([hidden]) {
+  position: absolute;
+  top: 100%;
+  right: 10px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  max-width: min(40em, calc(100vw - 20px));
+  max-height: 60vh;
+  overflow: auto;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+#hidden-list button {
+  border: none;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#hidden-list button:hover {
+  background: var(--border);
+}
+#hidden-list .all {
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+button:disabled {
+  color: var(--muted);
+  cursor: default;
 }
 #errors {
   padding: 6px 10px;

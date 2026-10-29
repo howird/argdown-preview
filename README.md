@@ -30,10 +30,10 @@ With `use flake` in `.envrc`, the shell has just, watchexec and the three progra
 
 | Program | What it does |
 | --- | --- |
-| `argdown-preview` | The preview, as a language server Helix starts for `.argdown` files |
+| `argdown-preview` | The preview, and go to definition across `@include`s, as a language server Helix starts for `.argdown` files |
 | `argdown-preview port` | Print the URL and SSH tunnel of each running preview |
 | `argdown` | The Argdown CLI, e.g. `argdown map --format pdf` to export the map |
-| `argdown-language-server` | Argdown's own language server: diagnostics, symbols, completion, rename |
+| `argdown-language-server` | Argdown's own language server: diagnostics, symbols, references, completion, rename |
 
 Or without a flake: `nix run github:howird/argdown-preview#argdown-preview -- port`.
 
@@ -48,7 +48,10 @@ file-types = ["argdown", "ad", "adown"]
 comment-tokens = ["//"]
 block-comment-tokens = [{ start = "<!--", end = "-->" }, { start = "/*", end = "*/" }]
 roots = ["argdown.config.json", "argdown.config.js"]
-language-servers = ["argdown-language-server", "argdown-preview"]
+language-servers = [
+  { name = "argdown-language-server", except-features = ["goto-definition"] },
+  "argdown-preview",
+]
 
 [language-server.argdown-language-server]
 command = "argdown-language-server"
@@ -71,6 +74,13 @@ Hover is how the cursor position reaches the preview: Helix sends it to both ser
 their answers. On a title, reference or tag, argdown's page comes first, with the element's
 relations. The preview's page names the node `space v` selected, so a missing page means nothing
 was selected.
+
+Go to definition (`gd`) comes from the preview, which is why `argdown-language-server` leaves it
+out above: Helix asks the first server that offers a feature. On a statement or argument, written
+out or referenced, it lists where that statement or argument is defined, the canonical
+definition first; an argument's premise-conclusion structure counts as one of its definitions.
+It finds them in included files, and from them, where Argdown's own server only looks in the file
+you are in. It covers statements that aren't on the map, but not tags.
 
 Helix runs the rest of a key's commands when one fails, so one global binding can drive several
 previews. With tinymist:
@@ -119,6 +129,18 @@ node's line, and errors in a part show in the banner as `part.argdown:12:3: …`
 While you open, edit or hover in a file that the previewed file includes, the preview stays on
 the including file and re-renders it. A file it doesn't include replaces it in the preview.
 
+### Hiding parts of the map
+
+Click a node or group and press **Hide**, or `h`, to hide it. The map is laid out again without it, and without
+what supports or attacks it, all the way down, except what also supports or attacks something
+still on the map. A group hides the nodes in it the same way. As Argdown leaves statements that
+nothing connects off the map, a node whose supporters and attackers were all hidden may go too.
+
+**Hidden (n)** lists what you hid: click an item to show it again, with what it took with it, or
+**Show all**. Hidden items are kept per file by title, so they stay hidden as you edit, until
+the language server stops. They add to `selection.excludeStatements` and
+`selection.excludeArguments` from the config and frontmatter.
+
 ### Which node `space v` selects
 
 The innermost thing on the map that contains the cursor:
@@ -146,11 +168,14 @@ edit with `@argdown/core` (`src/server/render.ts`), and `src/server/preview.ts` 
 | --- | --- |
 | `GET /events` | Server-sent events: `render` (the dot, or errors) and `select` (a node) |
 | `POST /click {svgId}` | map → editor: the server sends `window/showDocument` to Helix |
+| `POST /hide {svgId}` | hide an element; the server renders without it (`src/server/hide.ts`) |
+| `POST /unhide {kind, title}` | show a hidden element again, or everything with `{}` |
 
 `src/shared/locate.ts` maps between the two. Each SVG element is named by its `<title>`: `nN`
 for a statement or argument (the map node's id), and `cluster_K` for a group, numbered in the
 pre-order `DotExportPlugin` writes them in. Statements, arguments and sections carry their
-source ranges in the parsed model, which are translated back to the files they came from.
+source ranges in the parsed model, which are translated back to the files they came from. The
+same ranges, for every statement and argument in the model, answer go to definition.
 
 ## Developing
 
