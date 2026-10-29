@@ -90,7 +90,8 @@ you work locally, and `preview.open = true` opens it in your browser when Helix 
 
 ## What it shows
 
-The preview follows the last `.argdown` file you opened, edited or hovered in. It renders on
+The preview follows the last `.argdown` file you opened, edited or hovered in, except for files
+it includes (see [`@include`](#include)). It renders on
 every edit, after typing pauses for 150 ms, and keeps your zoom and position. `f` or **Fit**
 fits the map to the window; **SVG** downloads it.
 
@@ -98,8 +99,25 @@ Settings come from the nearest `argdown.config.json`, `.js`, `.mjs` or `.cjs` in
 file's directory, and the file's frontmatter (`===`) overrides them, as with `argdown map`.
 While the file has a syntax error, the last map stays up under a banner with the error.
 
-`@include` is not supported: Argdown pastes included files in place, which loses their line
-numbers, so nothing could jump to them.
+### `@include`
+
+`@include(part.argdown)` pastes in another file, with its path relative to the including file.
+Included files can include others, and each file can be included once. The text comes from the
+editor when the file is open there, and from disk otherwise. Included files that aren't open are
+watched, so saving one from elsewhere updates the map.
+
+Unlike `argdown map`:
+
+- `@include` must be on a line by itself.
+- An included file's frontmatter is dropped. Only the root file's frontmatter and config apply.
+- A missing file, a file included twice, or an include in a file that was never saved is an
+  error in the banner on that line, and the rest of the map still renders.
+
+The map, clicks and `space v` all work in the included files: a click opens the part at the
+node's line, and errors in a part show in the banner as `part.argdown:12:3: …`.
+
+While you open, edit or hover in a file that the previewed file includes, the preview stays on
+the including file and re-renders it. A file it doesn't include replaces it in the preview.
 
 ### Which node `space v` selects
 
@@ -119,8 +137,9 @@ same node again moves to its next occurrence.
 
 ## How it works
 
-`src/cli.ts` runs `src/server/lsp.ts`, a stdio language server. It parses every edit with
-`@argdown/core` (`src/server/render.ts`), and `src/server/preview.ts` pushes the dot to
+`src/cli.ts` runs `src/server/lsp.ts`, a stdio language server. It expands `@include`s
+(`src/server/include.ts`), keeping which file and line each line came from, and parses every
+edit with `@argdown/core` (`src/server/render.ts`), and `src/server/preview.ts` pushes the dot to
 `src/viewer/`, which lays it out with `VizJsMap` from `@argdown/map-views`, as the sandbox does.
 
 | Endpoint | Direction |
@@ -131,7 +150,7 @@ same node again moves to its next occurrence.
 `src/shared/locate.ts` maps between the two. Each SVG element is named by its `<title>`: `nN`
 for a statement or argument (the map node's id), and `cluster_K` for a group, numbered in the
 pre-order `DotExportPlugin` writes them in. Statements, arguments and sections carry their
-source ranges in the parsed model.
+source ranges in the parsed model, which are translated back to the files they came from.
 
 ## Developing
 
