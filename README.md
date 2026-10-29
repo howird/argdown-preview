@@ -31,11 +31,8 @@ With `use flake` in `.envrc`, the shell has just, watchexec and the three progra
 | Program | What it does |
 | --- | --- |
 | `argdown-preview` | The preview, and go to definition across `@include`s, as a language server Helix starts for `.argdown` files |
-| `argdown-preview port` | Print the URL and SSH tunnel of each running preview |
 | `argdown` | The Argdown CLI, e.g. `argdown map --format pdf` to export the map |
 | `argdown-language-server` | Argdown's own language server: diagnostics, symbols, references, completion, rename |
-
-Or without a flake: `nix run github:howird/argdown-preview#argdown-preview -- port`.
 
 ## Helix
 
@@ -59,9 +56,6 @@ args = ["--stdio"]
 
 [language-server.argdown-preview]
 command = "argdown-preview"
-
-[language-server.argdown-preview.config.preview]
-host = "127.0.0.1:0"
 ```
 
 ```toml
@@ -93,10 +87,27 @@ There is no tree-sitter grammar for Argdown, so Helix doesn't highlight it.
 
 ### Port
 
-The preview listens on `preview.host`, `127.0.0.1:0` by default, which picks a free port. Helix
-shows the URL when the server starts, and `argdown-preview port` prints it again, with the
-`ssh -NL` line to run on your laptop. A fixed port (`127.0.0.1:23640`) saves the lookup when
-you work locally, and `preview.open = true` opens it in your browser when Helix starts.
+The preview listens on `127.0.0.1` and a free port. Helix shows the URL, with the `ssh -NL` line
+to run on your laptop, when the server starts; `:lsp-workspace-command argdown.previewUrl` shows
+it again. A fixed port saves the lookup and keeps the tunnel and the browser tab working across
+restarts. Set it in `languages.toml`:
+
+```toml
+[language-server.argdown-preview.config.preview]
+port = 23640
+host = "127.0.0.1"
+```
+
+or with `$ARGDOWN_PREVIEW_PORT` and `$ARGDOWN_PREVIEW_HOST`, say in the project's `.envrc`; these
+override `languages.toml`. If the port is taken, Helix shows an error and there is no preview
+until you restart the server on a free one. `open = true` there opens the preview in your
+browser when Helix starts.
+
+With latex-preview as well, one binding shows both URLs:
+
+```toml
+V = [":lsp-workspace-command latex.previewUrl", ":lsp-workspace-command argdown.previewUrl"]
+```
 
 ## What it shows
 

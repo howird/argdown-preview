@@ -1,5 +1,5 @@
 // Drives the built language server over stdio, as Helix does.
-import { ChildProcess, execFileSync, spawn } from "node:child_process";
+import { ChildProcess, spawn } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -55,9 +55,12 @@ const last = (event: string) => {
   return found.data;
 };
 
-beforeAll(async () => {
-  server = spawn(process.execPath, [cli], { stdio: ["pipe", "pipe", "inherit"] });
-  rpc = createMessageConnection(new StreamMessageReader(server.stdout!), new StreamMessageWriter(server.stdin!));
+// Starts a language server with `env` on top of the test's environment, minus any port settings
+// from outside, and initializes it with `preview` options.
+const startServer = async (env: Record<string, string>, preview: Record<string, unknown>) => {
+  const { ARGDOWN_PREVIEW_HOST, ARGDOWN_PREVIEW_PORT, ...rest } = process.env;
+  const server = spawn(process.execPath, [cli], { stdio: ["pipe", "pipe", "inherit"], env: { ...rest, ...env } });
+  const rpc = createMessageConnection(new StreamMessageReader(server.stdout!), new StreamMessageWriter(server.stdin!));
   const messages: string[] = [];
   rpc.onNotification("window/showMessage", ({ message }) => {
     messages.push(message);
@@ -72,14 +75,30 @@ beforeAll(async () => {
     processId: process.pid,
     rootUri: pathToFileURL(dir).href,
     capabilities: { window: { showDocument: { support: true } } },
-    initializationOptions: { preview: { host: "127.0.0.1:0" } },
+    initializationOptions: { preview },
   });
   await rpc.sendNotification("initialized", {});
-  url = await eventually(() => {
+  return { server, rpc, messages };
+};
+
+const stopServer = async (started: { server: ChildProcess; rpc: MessageConnection }) => {
+  await started.rpc.sendRequest("shutdown").catch(() => {});
+  started.server.kill();
+};
+
+// The URL a server announced.
+const announced = (messages: string[]) =>
+  eventually(() => {
     const match = messages.join("\n").match(/http:\/\/127\.0\.0\.1:\d+/);
     if (!match) throw new Error("no URL announced");
     return match[0];
   });
+
+let messages: string[];
+
+beforeAll(async () => {
+  ({ server, rpc, messages } = await startServer({}, { host: "127.0.0.1", port: 0 }));
+  url = await announced(messages);
 
   stream = new AbortController();
   const response = await fetch(`${url}/events`, { signal: stream.signal });
@@ -105,8 +124,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   stream?.abort();
-  await rpc?.sendRequest("shutdown").catch(() => {});
-  server?.kill();
+  if (server) await stopServer({ server, rpc });
 });
 
 // The next render event after `count` events had arrived.
@@ -291,8 +309,36 @@ test("opening a file no root includes renders it alone", async () => {
   expect(nodeId(state.dot, "On its own")).toBeDefined();
 });
 
-test("`port` finds the running preview", () => {
-  const out = execFileSync(process.execPath, [cli, "port"], { encoding: "utf8" });
-  expect(out).toContain(url);
-  expect(out).toMatch(/ssh -NL (\d+):127\.0\.0\.1:\1 /);
+test("`argdown.previewUrl` repeats the URL", async () => {
+  const count = messages.length;
+  await rpc.sendRequest("workspace/executeCommand", { command: "argdown.previewUrl" });
+  const message = await eventually(() => {
+    const m = messages.slice(count).at(0);
+    if (!m) throw new Error("no message yet");
+    return m;
+  });
+  expect(message).toContain(url);
+  expect(message).toMatch(/ssh -NL (\d+):127\.0\.0\.1:\1 /);
+});
+
+test("ARGDOWN_PREVIEW_PORT overrides preview.port", async () => {
+  const taken = Number(new URL(url).port);
+  const other = await startServer({ ARGDOWN_PREVIEW_PORT: "0" }, { host: "127.0.0.1", port: taken });
+  try {
+    const otherUrl = await announced(other.messages);
+    expect(otherUrl).not.toBe(url);
+    expect((await fetch(otherUrl)).status).toBe(200);
+  } finally {
+    await stopServer(other);
+  }
+});
+
+test("a taken port is an error", async () => {
+  const taken = new URL(url).port;
+  const other = await startServer({ ARGDOWN_PREVIEW_PORT: taken }, { host: "127.0.0.1", port: 0 });
+  try {
+    await eventually(() => expect(other.messages.join("\n")).toContain(`can't listen on 127.0.0.1:${taken}`));
+  } finally {
+    await stopServer(other);
+  }
 });

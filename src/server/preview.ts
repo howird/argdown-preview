@@ -44,16 +44,13 @@ export class PreviewServer {
     this.server = http.createServer((req, res) => this.handle(req, res).catch((e) => fail(res, 500, String(e))));
   }
 
-  // Resolves to the URL the preview is served at. `host` is `HOST:PORT`; port 0 picks a free one.
-  listen(host: string): Promise<string> {
-    const at = host.lastIndexOf(":");
-    const hostname = at < 0 ? host : host.slice(0, at);
-    const port = at < 0 ? 0 : Number(host.slice(at + 1));
+  // Resolves to the URL the preview is served at. Port 0 picks a free one.
+  listen(host: string, port: number): Promise<string> {
     return new Promise((resolve, reject) => {
       this.server.once("error", reject);
-      this.server.listen(port, hostname, () => {
+      this.server.listen(port, host, () => {
         const { port } = this.server.address() as AddressInfo;
-        resolve(`http://${hostname}:${port}`);
+        resolve(`http://${host}:${port}`);
       });
     });
   }

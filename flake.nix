@@ -13,8 +13,7 @@
     packages = forAllSystems (pkgs: rec {
       default = argdown-preview;
 
-      # The preview language server, plus the argdown CLI and language server it pins. `port` runs
-      # ss, so iproute2 goes on PATH where it exists.
+      # The preview language server, plus the argdown CLI and language server it pins.
       argdown-preview = pkgs.buildNpmPackage {
         pname = "argdown-preview";
         version = "0.1.0";
@@ -23,7 +22,6 @@
         npmDepsHash = "sha256-qzuuI1Z7G7YJPDtfrkBRvX7LlaV1dk04LKsudBtfnR4=";
 
         doCheck = true;
-        nativeCheckInputs = pkgs.lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.iproute2;
         checkPhase = ''
           runHook preCheck
           npm test
@@ -33,8 +31,6 @@
         postInstall = let
           modules = "$out/lib/node_modules/argdown-preview/node_modules/@argdown";
         in ''
-          wrapProgram $out/bin/argdown-preview \
-            --prefix PATH : ${pkgs.lib.makeBinPath (pkgs.lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.iproute2)}
           makeWrapper ${pkgs.nodejs_22}/bin/node $out/bin/argdown \
             --add-flags ${modules}/cli/dist/cli.js
           makeWrapper ${pkgs.nodejs_22}/bin/node $out/bin/argdown-language-server \
@@ -70,7 +66,7 @@
 
       # The shell for working on argdown-preview itself.
       develop = pkgs.mkShell {
-        nativeBuildInputs = [pkgs.nodejs_22 pkgs.just] ++ pkgs.lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.iproute2;
+        nativeBuildInputs = [pkgs.nodejs_22 pkgs.just];
       };
     });
 

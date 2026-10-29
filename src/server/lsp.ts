@@ -6,6 +6,7 @@
 // those parts keeps that root up; any other document becomes the root.
 import { spawn } from "node:child_process";
 import { FSWatcher, readFileSync, watch } from "node:fs";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import {
@@ -25,19 +26,32 @@ import { PreviewServer } from "./preview.js";
 import { render, Rendered } from "./render.js";
 
 export const SHOW_IN_PREVIEW = "argdown.showInPreview";
+export const PREVIEW_URL = "argdown.previewUrl";
 
 // Edits re-render once typing pauses for this long.
 const DEBOUNCE_MS = 150;
 
+// Port 0 picks a free one. `badPort` is a port setting that isn't an integer from 0 to 65535.
 interface Options {
   host: string;
+  port: number;
+  badPort?: string;
   open: boolean;
 }
 
-const readOptions = (init: any): Options => ({
-  host: typeof init?.preview?.host === "string" ? init.preview.host : "127.0.0.1:0",
-  open: init?.preview?.open === true,
-});
+// $ARGDOWN_PREVIEW_HOST and $ARGDOWN_PREVIEW_PORT win over the config Helix sends.
+const readOptions = (init: any): Options => {
+  const host = process.env.ARGDOWN_PREVIEW_HOST || init?.preview?.host;
+  const port = process.env.ARGDOWN_PREVIEW_PORT || init?.preview?.port;
+  const number = typeof port === "string" && /^\s*\d+\s*$/.test(port) ? Number(port) : port ?? 0;
+  const valid = typeof number === "number" && Number.isInteger(number) && number >= 0 && number <= 65535;
+  return {
+    host: typeof host === "string" && host ? host : "127.0.0.1",
+    port: valid ? number : 0,
+    badPort: valid ? undefined : String(port),
+    open: init?.preview?.open === true,
+  };
+};
 
 const toPath = (uri: string) => (uri.startsWith("file:") ? fileURLToPath(uri) : uri);
 
@@ -64,6 +78,15 @@ export const runLanguageServer = (viewerDir: string) => {
   // Included files that aren't open, so edits made elsewhere re-render the root.
   const watchers = new Map<string, FSWatcher>();
   let options: Options = readOptions(undefined);
+  // Where the preview listens, once it does.
+  let url: string | undefined;
+
+  const describeUrl = () => {
+    if (!url) return "argdown-preview: the preview isn't listening";
+    const { port } = new URL(url);
+    const tunnel = `ssh -NL ${port}:${options.host}:${port} ${os.userInfo().username}@${os.hostname()}`;
+    return `argdown-preview: ${url} (from your laptop: ${tunnel})`;
+  };
 
   // An open document's text, else the file on disk.
   const read = (uri: string): string | undefined => {
@@ -195,20 +218,22 @@ export const runLanguageServer = (viewerDir: string) => {
         textDocumentSync: TextDocumentSyncKind.Incremental,
         hoverProvider: true,
         definitionProvider: true,
-        executeCommandProvider: { commands: [SHOW_IN_PREVIEW] },
+        executeCommandProvider: { commands: [SHOW_IN_PREVIEW, PREVIEW_URL] },
       },
       serverInfo: { name: "argdown-preview" },
     };
   });
 
   connection.onInitialized(async () => {
+    const at = `${options.host}:${options.badPort ?? options.port}`;
     try {
-      const url = await preview.listen(options.host);
+      if (options.badPort !== undefined) throw new Error("the port must be an integer from 0 to 65535");
+      url = await preview.listen(options.host, options.port);
       log(`preview at ${url}`);
-      notify(MessageType.Info, `argdown-preview: ${url}`);
+      notify(MessageType.Info, describeUrl());
       if (options.open) openInBrowser(url);
     } catch (e) {
-      notify(MessageType.Error, `argdown-preview: can't listen on ${options.host}: ${e}`);
+      notify(MessageType.Error, `argdown-preview: can't listen on ${at}: ${e}`);
     }
   });
 
@@ -242,6 +267,7 @@ export const runLanguageServer = (viewerDir: string) => {
   });
 
   connection.onExecuteCommand(async ({ command }) => {
+    if (command === PREVIEW_URL) return notify(MessageType.Info, describeUrl());
     if (command !== SHOW_IN_PREVIEW || !hover) return;
     await flush(hover.uri);
     const rendered = renders.get(rootFor(hover.uri));
