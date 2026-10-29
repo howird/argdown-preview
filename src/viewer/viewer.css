@@ -148,13 +148,28 @@ button:disabled {
   gap: 6px;
   white-space: nowrap;
 }
+#legend-panel hr {
+  width: 100%;
+  margin: 2px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+/* Rounded like the nodes, and in `--color`. */
 .swatch {
   flex: none;
-  width: 0.9em;
+  width: 1.2em;
   height: 0.9em;
-  border: 1px solid #000;
+  box-sizing: border-box;
+  border-radius: 3px;
   /* Inverted with the map in dark mode, so it matches the nodes. */
   filter: var(--map-filter);
+}
+.swatch.outline {
+  background: #fff;
+  border: 2px solid var(--color);
+}
+.swatch.fill {
+  background: var(--color);
 }
 #map svg {
   display: block;

@@ -8,12 +8,14 @@ interface ViewState {
   vizJs?: Record<string, unknown>;
   errors: { file?: string; line?: number; column?: number; message: string }[];
   hidden: Hidden[];
-  legend?: LegendEntry[];
+  legend?: Legend;
 }
 
-interface LegendEntry {
-  tag: string;
-  color: string;
+type Kind = "statement" | "argument" | "group";
+
+interface Legend {
+  kinds: Exclude<Kind, "group">[];
+  tags: { tag: string; color: string; kinds: Kind[] }[];
 }
 
 interface Hidden {
@@ -102,26 +104,48 @@ try {
   legendOn = localStorage.getItem("argdown-preview-legend") !== "off";
 } catch {}
 
-const showLegend = (entries: LegendEntry[]) => {
-  legendButton.disabled = entries.length === 0;
-  legendPanel.hidden = entries.length === 0 || !legendOn;
-  legendPanel.replaceChildren(
-    ...entries.map(({ tag, color }) => {
-      const entry = document.createElement("div");
-      entry.className = "entry";
-      const swatch = document.createElement("span");
-      swatch.className = "swatch";
-      swatch.style.background = color;
-      entry.append(swatch, `#${tag}`);
-      return entry;
-    }),
-  );
+// A swatch drawn as Argdown draws `kind` in `color`: a statement as a white box with a coloured
+// border, an argument or group filled.
+const swatch = (kind: Kind, color: string) => {
+  const span = document.createElement("span");
+  span.className = `swatch ${kind === "statement" ? "outline" : "fill"}`;
+  span.style.setProperty("--color", color);
+  return span;
 };
 
-let legend: LegendEntry[] = [];
+// The colour Argdown gives what no tag colours.
+const UNTAGGED = "#888";
+
+const KIND_LABELS = { statement: "[Statement]", argument: "<Argument>" };
+
+const isEmpty = (legend: Legend) => legend.kinds.length === 0 && legend.tags.length === 0;
+
+const showLegend = (legend: Legend) => {
+  legendButton.disabled = isEmpty(legend);
+  legendPanel.hidden = isEmpty(legend) || !legendOn;
+  const entry = (swatches: HTMLElement[], label: string) => {
+    const div = document.createElement("div");
+    div.className = "entry";
+    div.append(...swatches, label);
+    return div;
+  };
+  const kinds = legend.kinds.map((kind) => entry([swatch(kind, UNTAGGED)], KIND_LABELS[kind]));
+  // A tag that colours both statements and arguments gets one swatch of each; groups are filled
+  // like arguments, so they share theirs.
+  const tags = legend.tags.map(({ tag, color, kinds }) =>
+    entry(
+      [...new Set(kinds.map((k) => (k === "statement" ? k : "argument")))].map((k) => swatch(k, color)),
+      `#${tag}`,
+    ),
+  );
+  const rule = document.createElement("hr");
+  legendPanel.replaceChildren(...kinds, ...(kinds.length && tags.length ? [rule] : []), ...tags);
+};
+
+let legend: Legend = { kinds: [], tags: [] };
 
 const toggleLegend = () => {
-  if (legend.length === 0) return;
+  if (isEmpty(legend)) return;
   legendOn = !legendOn;
   try {
     localStorage.setItem("argdown-preview-legend", legendOn ? "on" : "off");
@@ -134,7 +158,7 @@ const show = async (state: ViewState) => {
   document.title = `${fileName.textContent} · argdown-preview`;
   showErrors(state.errors);
   showHidden(state.hidden ?? []);
-  legend = state.legend ?? [];
+  legend = state.legend ?? { kinds: [], tags: [] };
   showLegend(legend);
   if (!state.dot || (shown?.file === state.file && shown.dot === state.dot)) return;
   // Keep the view while editing the same file; fit the map when it is new.

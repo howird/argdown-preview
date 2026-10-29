@@ -114,9 +114,11 @@ it includes (see [`@include`](#include)). It renders on
 every edit, after typing pauses for 150 ms, and keeps your zoom and position. `f` or **Fit**
 fits the map to the window; **SVG** downloads it.
 
-The legend in the bottom-left corner lists the tags that colour something on the map, each with
-its colour. **Legend** or `l` shows or hides it, and the browser remembers which. It isn't part
-of the SVG export.
+The legend in the bottom-left corner shows how Argdown draws each kind of node: a statement
+(`[Title]`) as a white box with a coloured border, an argument (`<Title>`) as a filled box. Below
+them it lists the tags that colour something on the map, each with its colour, drawn as the kinds
+of node it colours. **Legend** or `l` shows or hides it, and the browser remembers which. It isn't
+part of the SVG export.
 
 Settings come from the nearest `argdown.config.json`, `.js`, `.mjs` or `.cjs` in or above the
 file's directory, and the file's frontmatter (`===`) overrides them, as with `argdown map`.

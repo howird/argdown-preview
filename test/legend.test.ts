@@ -11,17 +11,27 @@ const legendOf = (text: string, config?: any, hidden: Hidden[] = []) => {
   return rendered;
 };
 const tagsOf = (text: string, config?: any, hidden: Hidden[] = []) =>
-  legendOf(text, config, hidden).legend.map((e) => e.tag);
+  legendOf(text, config, hidden).legend.tags.map((e) => e.tag);
 
 describe("legend", () => {
   test("lists each tag in the order it first appears, with its colour", () => {
     const rendered = legendOf("[A]: a #con\n  + <X>: x #pro\n  - <Y>: y #con\n");
     const { statements, arguments: args } = rendered.response;
-    expect(rendered.legend).toEqual([
-      { tag: "con", color: statements!["A"].color },
-      { tag: "pro", color: args!["X"].color },
+    expect(rendered.legend.tags).toEqual([
+      { tag: "con", color: statements!["A"].color, kinds: ["statement", "argument"] },
+      { tag: "pro", color: args!["X"].color, kinds: ["argument"] },
     ]);
-    expect(rendered.legend[0].color).not.toBe(rendered.legend[1].color);
+    expect(rendered.legend.tags[0].color).not.toBe(rendered.legend.tags[1].color);
+  });
+
+  test("lists the kinds of node on the map, statements first", () => {
+    expect(legendOf("<X>: x\n  + [A]: a\n").legend.kinds).toEqual(["statement", "argument"]);
+    expect(legendOf("[A]: a\n  + [B]: b\n").legend.kinds).toEqual(["statement"]);
+  });
+
+  test("leaves out a kind that is only hidden", () => {
+    const text = "[A]: a\n  + [B]: b\n  + <X>: x\n";
+    expect(legendOf(text, undefined, [{ kind: "argument", title: "X" }]).legend.kinds).toEqual(["statement"]);
   });
 
   test("is empty without tags", () => {
@@ -47,6 +57,8 @@ describe("legend", () => {
   test("lists a heading's tag only when groups are coloured by tag", () => {
     const text = "# Cats #pets\n\n[A]: a\n  + <X>: x\n";
     expect(tagsOf(text)).toEqual([]);
-    expect(tagsOf(text, { color: { colorizeGroupsByTag: true } })).toEqual(["pets"]);
+    expect(legendOf(text, { color: { colorizeGroupsByTag: true } }).legend.tags).toEqual([
+      expect.objectContaining({ tag: "pets", kinds: ["group"] }),
+    ]);
   });
 });
