@@ -21,6 +21,7 @@ import {
 } from "@argdown/core";
 import { buildIndex, MapIndex } from "../shared/locate.js";
 import { Exclusions, Hidden, toExclude } from "./hide.js";
+import { LegendEntry, legendFor } from "./legend.js";
 import { expand, Read, toSource } from "./include.js";
 
 // Hiding adds to the selection's exclusions. It runs after the frontmatter is merged in, which
@@ -71,6 +72,7 @@ export type Rendered =
       dot: string;
       vizJs: Record<string, unknown>;
       index: MapIndex;
+      legend: LegendEntry[];
       response: IArgdownResponse;
       includes: Set<string>;
       errors: RenderError[];
@@ -137,6 +139,7 @@ export const render = (rootUri: string, read: Read, config: IArgdownRequest = {}
     dot: response.dot,
     vizJs: (request as any).vizJs ?? {},
     index: buildIndex(response, segments),
+    legend: legendFor(request, response),
     response,
     includes,
     errors,

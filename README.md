@@ -114,6 +114,10 @@ it includes (see [`@include`](#include)). It renders on
 every edit, after typing pauses for 150 ms, and keeps your zoom and position. `f` or **Fit**
 fits the map to the window; **SVG** downloads it.
 
+The legend in the bottom-left corner lists the tags that colour something on the map, each with
+its colour. **Legend** or `l` shows or hides it, and the browser remembers which. It isn't part
+of the SVG export.
+
 Settings come from the nearest `argdown.config.json`, `.js`, `.mjs` or `.cjs` in or above the
 file's directory, and the file's frontmatter (`===`) overrides them, as with `argdown map`.
 While the file has a syntax error, the last map stays up under a banner with the error.

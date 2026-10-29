@@ -8,6 +8,12 @@ interface ViewState {
   vizJs?: Record<string, unknown>;
   errors: { file?: string; line?: number; column?: number; message: string }[];
   hidden: Hidden[];
+  legend?: LegendEntry[];
+}
+
+interface LegendEntry {
+  tag: string;
+  color: string;
 }
 
 interface Hidden {
@@ -22,6 +28,8 @@ const banner = $<HTMLDivElement>("errors");
 const hideButton = $<HTMLButtonElement>("hide");
 const hiddenButton = $<HTMLButtonElement>("hidden");
 const hiddenList = $<HTMLDivElement>("hidden-list");
+const legendButton = $<HTMLButtonElement>("legend");
+const legendPanel = $<HTMLDivElement>("legend-panel");
 
 const post = (path: string, body: unknown) => fetch(path, { method: "POST", body: JSON.stringify(body) });
 
@@ -88,11 +96,46 @@ const showHidden = (hidden: Hidden[]) => {
   );
 };
 
+// Whether the legend shows when there is something in it, remembered like the theme.
+let legendOn = true;
+try {
+  legendOn = localStorage.getItem("argdown-preview-legend") !== "off";
+} catch {}
+
+const showLegend = (entries: LegendEntry[]) => {
+  legendButton.disabled = entries.length === 0;
+  legendPanel.hidden = entries.length === 0 || !legendOn;
+  legendPanel.replaceChildren(
+    ...entries.map(({ tag, color }) => {
+      const entry = document.createElement("div");
+      entry.className = "entry";
+      const swatch = document.createElement("span");
+      swatch.className = "swatch";
+      swatch.style.background = color;
+      entry.append(swatch, `#${tag}`);
+      return entry;
+    }),
+  );
+};
+
+let legend: LegendEntry[] = [];
+
+const toggleLegend = () => {
+  if (legend.length === 0) return;
+  legendOn = !legendOn;
+  try {
+    localStorage.setItem("argdown-preview-legend", legendOn ? "on" : "off");
+  } catch {}
+  showLegend(legend);
+};
+
 const show = async (state: ViewState) => {
   fileName.textContent = state.file.split("/").pop() ?? state.file;
   document.title = `${fileName.textContent} · argdown-preview`;
   showErrors(state.errors);
   showHidden(state.hidden ?? []);
+  legend = state.legend ?? [];
+  showLegend(legend);
   if (!state.dot || (shown?.file === state.file && shown.dot === state.dot)) return;
   // Keep the view while editing the same file; fit the map when it is new.
   const keep = shown?.file === state.file;
@@ -185,11 +228,13 @@ themeButton.addEventListener("click", () => {
   } catch {}
 });
 
+legendButton.addEventListener("click", toggleLegend);
 $("fit").addEventListener("click", fit);
 $("export").addEventListener("click", exportSvg);
 document.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === "f") fit();
   if (e.key === "h") hide();
+  if (e.key === "l") toggleLegend();
   if (e.key === "Escape") hiddenList.hidden = true;
 });

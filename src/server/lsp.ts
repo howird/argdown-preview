@@ -183,7 +183,14 @@ export const runLanguageServer = (viewerDir: string) => {
     }
     syncWatchers();
     const last = renders.get(uri);
-    preview.show({ file, dot: last?.dot, vizJs: last?.vizJs, errors, hidden: hidden.get(uri) ?? [] });
+    preview.show({
+      file,
+      dot: last?.dot,
+      vizJs: last?.vizJs,
+      legend: last?.legend,
+      errors,
+      hidden: hidden.get(uri) ?? [],
+    });
   };
 
   const schedule = (part: string, delay: number) => {

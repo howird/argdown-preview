@@ -14,6 +14,8 @@ export interface ViewState {
   errors: { file?: string; line?: number; column?: number; message: string }[];
   // What is hidden from this file's map, in the order it was hidden.
   hidden: Hidden[];
+  // The tags that colour something on `dot`'s map, and their colours.
+  legend?: { tag: string; color: string }[];
 }
 
 export interface Handlers {
