@@ -130,15 +130,24 @@ const showLegend = (legend: Legend) => {
     div.append(...swatches, label);
     return div;
   };
-  const kinds = legend.kinds.map((kind) => entry([swatch(kind)], KIND_LABELS[kind]));
+  // A kind's swatch takes the colour its untagged nodes have, when they all have the one; without
+  // untagged nodes it is a key to the shape alone.
+  const untagged = legend.untagged ?? [];
+  const kindColour = (kind: Kind) => {
+    const found = untagged.filter((u) => u.kinds.includes(kind));
+    return found.length === 1 ? found[0].color : undefined;
+  };
+  const kinds = legend.kinds.map((kind) => entry([swatch(kind, kindColour(kind))], KIND_LABELS[kind]));
   // A colour on both statements and arguments gets one swatch of each; groups are filled like
   // arguments, so they share theirs.
   const swatches = (kinds: Kind[], color: string) =>
     [...new Set(kinds.map((k) => (k === "statement" ? k : "argument")))].map((k) => swatch(k, color));
-  const colours = [
-    ...legend.tags.map(({ tag, color, kinds }) => entry(swatches(kinds, color), `#${tag}`)),
-    ...(legend.untagged ?? []).map(({ color, kinds }) => entry(swatches(kinds, color), "untagged")),
-  ];
+  // Untagged colours the kinds' swatches don't already show.
+  const rest = untagged.flatMap(({ color, kinds }) => {
+    const left = kinds.filter((k) => kindColour(k) !== color);
+    return left.length ? [entry(swatches(left, color), "untagged")] : [];
+  });
+  const colours = [...legend.tags.map(({ tag, color, kinds }) => entry(swatches(kinds, color), `#${tag}`)), ...rest];
   const rule = document.createElement("hr");
   legendPanel.replaceChildren(...kinds, ...(kinds.length && colours.length ? [rule] : []), ...colours);
 };
