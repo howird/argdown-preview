@@ -317,8 +317,7 @@ test("`argdown.previewUrl` repeats the URL", async () => {
     if (!m) throw new Error("no message yet");
     return m;
   });
-  expect(message).toContain(url);
-  expect(message).toMatch(/ssh -NL (\d+):127\.0\.0\.1:\1 /);
+  expect(message).toBe(`argdown-preview: serving the preview at ${url}`);
 });
 
 test("ARGDOWN_PREVIEW_PORT overrides preview.port", async () => {

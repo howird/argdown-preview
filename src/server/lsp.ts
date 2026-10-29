@@ -6,7 +6,6 @@
 // those parts keeps that root up; any other document becomes the root.
 import { spawn } from "node:child_process";
 import { FSWatcher, readFileSync, watch } from "node:fs";
-import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import {
@@ -82,10 +81,8 @@ export const runLanguageServer = (viewerDir: string) => {
   let url: string | undefined;
 
   const describeUrl = () => {
-    if (!url) return "argdown-preview: the preview isn't listening";
-    const { port } = new URL(url);
-    const tunnel = `ssh -NL ${port}:${options.host}:${port} ${os.userInfo().username}@${os.hostname()}`;
-    return `argdown-preview: ${url} (from your laptop: ${tunnel})`;
+    if (!url) return "argdown-preview: not listening; see the error when it started";
+    return `argdown-preview: serving the preview at ${url}`;
   };
 
   // An open document's text, else the file on disk.

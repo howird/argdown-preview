@@ -5,8 +5,7 @@ the map and your editor.
 
 The map is the one the [Argdown sandbox](https://argdown.org/sandbox/map/viz-js) draws, from the
 same `@argdown/core` pipeline and Graphviz. Press a key in Helix to select the node under your
-cursor in the map, or click a node to jump to its source. It works over SSH: write on a remote
-machine and read on your laptop.
+cursor in the map, or click a node to jump to its source.
 
 ## Use it in a project
 
@@ -87,10 +86,9 @@ There is no tree-sitter grammar for Argdown, so Helix doesn't highlight it.
 
 ### Port
 
-The preview listens on `127.0.0.1` and a free port. Helix shows the URL, with the `ssh -NL` line
-to run on your laptop, when the server starts; `:lsp-workspace-command argdown.previewUrl` shows
-it again. A fixed port saves the lookup and keeps the tunnel and the browser tab working across
-restarts. Set it in `languages.toml`:
+The preview listens on `127.0.0.1` and a free port. Helix shows the URL when the server starts;
+`:lsp-workspace-command argdown.previewUrl` shows it again. A fixed port saves the lookup and
+keeps the browser tab working across restarts. Set it in `languages.toml`:
 
 ```toml
 [language-server.argdown-preview.config.preview]
