@@ -16,6 +16,7 @@ type Kind = "statement" | "argument" | "group";
 interface Legend {
   kinds: Exclude<Kind, "group">[];
   tags: { tag: string; color: string; kinds: Kind[] }[];
+  untagged: { color: string; kinds: Kind[] }[];
 }
 
 interface Hidden {
@@ -105,20 +106,20 @@ try {
 } catch {}
 
 // A swatch drawn as Argdown draws `kind` in `color`: a statement as a white box with a coloured
-// border, an argument or group filled.
-const swatch = (kind: Kind, color: string) => {
+// border, an argument or group filled. Without a colour it is drawn in the text's, as a key to the
+// shapes alone.
+const swatch = (kind: Kind, color?: string) => {
   const span = document.createElement("span");
-  span.className = `swatch ${kind === "statement" ? "outline" : "fill"}`;
-  span.style.setProperty("--color", color);
+  span.className = `swatch ${kind === "statement" ? "outline" : "fill"}${color ? "" : " shape"}`;
+  if (color) span.style.setProperty("--color", color);
   return span;
 };
-
-// The colour Argdown gives what no tag colours.
-const UNTAGGED = "#888";
 
 const KIND_LABELS = { statement: "[Statement]", argument: "<Argument>" };
 
 const isEmpty = (legend: Legend) => legend.kinds.length === 0 && legend.tags.length === 0;
+
+const EMPTY: Legend = { kinds: [], tags: [], untagged: [] };
 
 const showLegend = (legend: Legend) => {
   legendButton.disabled = isEmpty(legend);
@@ -129,20 +130,20 @@ const showLegend = (legend: Legend) => {
     div.append(...swatches, label);
     return div;
   };
-  const kinds = legend.kinds.map((kind) => entry([swatch(kind, UNTAGGED)], KIND_LABELS[kind]));
-  // A tag that colours both statements and arguments gets one swatch of each; groups are filled
-  // like arguments, so they share theirs.
-  const tags = legend.tags.map(({ tag, color, kinds }) =>
-    entry(
-      [...new Set(kinds.map((k) => (k === "statement" ? k : "argument")))].map((k) => swatch(k, color)),
-      `#${tag}`,
-    ),
-  );
+  const kinds = legend.kinds.map((kind) => entry([swatch(kind)], KIND_LABELS[kind]));
+  // A colour on both statements and arguments gets one swatch of each; groups are filled like
+  // arguments, so they share theirs.
+  const swatches = (kinds: Kind[], color: string) =>
+    [...new Set(kinds.map((k) => (k === "statement" ? k : "argument")))].map((k) => swatch(k, color));
+  const colours = [
+    ...legend.tags.map(({ tag, color, kinds }) => entry(swatches(kinds, color), `#${tag}`)),
+    ...(legend.untagged ?? []).map(({ color, kinds }) => entry(swatches(kinds, color), "untagged")),
+  ];
   const rule = document.createElement("hr");
-  legendPanel.replaceChildren(...kinds, ...(kinds.length && tags.length ? [rule] : []), ...tags);
+  legendPanel.replaceChildren(...kinds, ...(kinds.length && colours.length ? [rule] : []), ...colours);
 };
 
-let legend: Legend = { kinds: [], tags: [] };
+let legend: Legend = EMPTY;
 
 const toggleLegend = () => {
   if (isEmpty(legend)) return;
@@ -158,7 +159,7 @@ const show = async (state: ViewState) => {
   document.title = `${fileName.textContent} · argdown-preview`;
   showErrors(state.errors);
   showHidden(state.hidden ?? []);
-  legend = state.legend ?? { kinds: [], tags: [] };
+  legend = state.legend ?? EMPTY;
   showLegend(legend);
   if (!state.dot || (shown?.file === state.file && shown.dot === state.dot)) return;
   // Keep the view while editing the same file; fit the map when it is new.

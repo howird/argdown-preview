@@ -61,4 +61,32 @@ describe("legend", () => {
       expect.objectContaining({ tag: "pets", kinds: ["group"] }),
     ]);
   });
+
+  test("lists the colour of untagged nodes, as ColorPlugin gave it", () => {
+    const text = "[A]: a #pro\n  + <X>: x #pro\n  - <Y>: y\n";
+    const rendered = legendOf(text);
+    expect(rendered.legend.untagged).toEqual([{ color: rendered.response.arguments!["Y"].color, kinds: ["argument"] }]);
+    expect(rendered.legend.untagged[0].color).toBe("#1b9e77");
+  });
+
+  test("takes the untagged colour from the colour scheme", () => {
+    const config = { color: { colorScheme: ["#ff00ff", "#00ff00", "#0000ff"] } };
+    expect(legendOf("[A]: a #pro\n  + <X>: x\n", config).legend.untagged).toEqual([
+      { color: "#ff00ff", kinds: ["argument"] },
+    ]);
+  });
+
+  test("lists no untagged colour when every node is tagged or otherwise coloured", () => {
+    expect(legendOf("[A]: a #pro\n  + <X>: x #con\n").legend.untagged).toEqual([]);
+    expect(legendOf('[A]: a #pro\n  + <X>: x {color: "#123456"}\n').legend.untagged).toEqual([]);
+    expect(legendOf("[A]: a #pro\n  + <X>: x\n", { color: { argumentColors: { X: "#123456" } } }).legend.untagged).toEqual([]);
+  });
+
+  test("gives a tag without a tagColors entry the next colour of the scheme", () => {
+    const config = { color: { colorScheme: ["#000001", "#000002", "#000003"] } };
+    expect(legendOf("[A]: a #pro\n  + <X>: x #con\n", config).legend.tags).toEqual([
+      { tag: "pro", color: "#000002", kinds: ["statement"] },
+      { tag: "con", color: "#000003", kinds: ["argument"] },
+    ]);
+  });
 });

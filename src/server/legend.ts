@@ -20,6 +20,9 @@ export interface Legend {
   // The kinds of node on the map, statements before arguments.
   kinds: Exclude<Kind, "group">[];
   tags: LegendEntry[];
+  // The colours `ColorPlugin` gave the statements and arguments that nothing else colours, which
+  // is the first of the colour scheme, with what on the map has each.
+  untagged: { color: string; kinds: Exclude<Kind, "group">[] }[];
 }
 
 const KINDS: Kind[] = ["statement", "argument", "group"];
@@ -36,11 +39,22 @@ export const legendFor = (request: IArgdownRequest, response: IArgdownResponse):
   // The kinds each tag colours.
   const used = new Map<string, Set<Kind>>();
   const kinds = new Set<Kind>();
+  // The kinds each fallback colour is on.
+  const fallback = new Map<string, Set<Kind>>();
 
   // `overridden` is whether a colour setting other than the tags decides the item's colour.
-  const use = (kind: Kind, item: { data?: any; tags?: string[] } | undefined, overridden: boolean, byTag: boolean) => {
-    if (!item || !byTag || !item.tags?.length) return;
-    if (overridden || (!settings.ignoreColorData && item.data?.color !== undefined)) return;
+  const use = (
+    kind: Kind,
+    item: { data?: any; tags?: string[]; color?: string } | undefined,
+    overridden: boolean,
+    byTag: boolean,
+  ) => {
+    if (!item || overridden || (!settings.ignoreColorData && item.data?.color !== undefined)) return;
+    if (!byTag || !item.tags?.length) {
+      // Groups fall back to a colour by level instead, which the legend doesn't show.
+      if (kind !== "group" && item.color) fallback.set(item.color, (fallback.get(item.color) ?? new Set()).add(kind));
+      return;
+    }
     const tag = winner(item.tags, tagData);
     used.set(tag, (used.get(tag) ?? new Set()).add(kind));
   };
@@ -69,5 +83,9 @@ export const legendFor = (request: IArgdownRequest, response: IArgdownResponse):
       const colours = tag && used.get(tag);
       return tag && color && colours ? [{ tag, color, kinds: KINDS.filter((k) => colours.has(k)) }] : [];
     }),
+    untagged: [...fallback].map(([color, colours]) => ({
+      color,
+      kinds: (["statement", "argument"] as const).filter((k) => colours.has(k)),
+    })),
   };
 };

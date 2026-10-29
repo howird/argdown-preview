@@ -171,6 +171,14 @@ button:disabled {
 .swatch.fill {
   background: var(--color);
 }
+/* A key to the shapes, in no colour of the map's, so it isn't taken for one. */
+.swatch.shape {
+  --color: var(--fg);
+  filter: none;
+}
+.swatch.shape.outline {
+  background: transparent;
+}
 #map svg {
   display: block;
   filter: var(--map-filter);
