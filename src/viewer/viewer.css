@@ -9,9 +9,9 @@
   --map-filter: none;
   color-scheme: light;
 }
-/* Dark when the system is dark and the toggle isn't on Light, or when it is on Dark. */
+/* Light by default; dark when the toggle is on Dark, or on Auto and the system is dark. */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root[data-theme="auto"] {
     --bg: #1e1f22;
     --fg: #ddd;
     --muted: #999;

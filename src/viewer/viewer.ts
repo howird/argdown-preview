@@ -106,18 +106,19 @@ const exportSvg = () => {
   URL.revokeObjectURL(link.href);
 };
 
+// Light is the default because the map is drawn for a light page; dark only inverts it.
 // Auto follows the system. The choice is remembered per browser, where storage works.
-const THEMES = ["auto", "light", "dark"] as const;
+const THEMES = ["light", "dark", "auto"] as const;
 type Theme = (typeof THEMES)[number];
 const themeButton = $<HTMLButtonElement>("theme");
 
 const applyTheme = (theme: Theme) => {
-  if (theme === "auto") delete document.documentElement.dataset.theme;
+  if (theme === "light") delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = theme;
   themeButton.textContent = theme[0].toUpperCase() + theme.slice(1);
 };
 
-let theme: Theme = "auto";
+let theme: Theme = "light";
 try {
   const saved = localStorage.getItem("argdown-preview-theme");
   if (THEMES.includes(saved as Theme)) theme = saved as Theme;
