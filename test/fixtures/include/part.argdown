@@ -1,0 +1,12 @@
+===
+title: Ignored, as only the root's front matter applies
+===
+
+<Purr>: Cats purr when they are happy.
+
+<Purr>
+
+(1) Cats purr.
+(2) Purring is calming.
+----
+(3) [Great]

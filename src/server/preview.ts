@@ -9,7 +9,8 @@ export interface ViewState {
   file: string;
   dot?: string;
   vizJs?: Record<string, unknown>;
-  errors: { line?: number; column?: number; message: string }[];
+  // `file` is set when the error is in another file than the previewed one, such as an included one.
+  errors: { file?: string; line?: number; column?: number; message: string }[];
 }
 
 const TYPES: Record<string, string> = {

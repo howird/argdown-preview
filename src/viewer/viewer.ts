@@ -5,7 +5,7 @@ interface ViewState {
   file: string;
   dot?: string;
   vizJs?: Record<string, unknown>;
-  errors: { line?: number; column?: number; message: string }[];
+  errors: { file?: string; line?: number; column?: number; message: string }[];
 }
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -46,7 +46,10 @@ const highlight = (svgId: string | undefined, pan: boolean) => {
 const showErrors = (errors: ViewState["errors"]) => {
   banner.hidden = errors.length === 0;
   banner.textContent = errors
-    .map((e) => (e.line ? `${e.line}${e.column ? `:${e.column}` : ""}: ${e.message}` : e.message))
+    .map((e) => {
+      const file = e.file ? `${e.file.split("/").pop()}:` : "";
+      return e.line ? `${file}${e.line}${e.column ? `:${e.column}` : ""}: ${e.message}` : `${file && `${file} `}${e.message}`;
+    })
     .join("\n");
 };
 

@@ -1,6 +1,6 @@
 // Drives the built language server over stdio, as Helix does.
 import { ChildProcess, execFileSync, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -19,6 +19,15 @@ const uri = pathToFileURL(file).href;
 const source = readFileSync(new URL("fixtures/cats.argdown", import.meta.url), "utf8");
 writeFileSync(path.join(dir, "argdown.config.json"), JSON.stringify({ dot: { graphVizSettings: { rankdir: "LR" } } }));
 writeFileSync(file, source);
+
+// The include fixtures, in their own directory so files written there trigger the watcher.
+const includeDir = path.join(dir, "include");
+mkdirSync(includeDir);
+for (const name of ["main.argdown", "part.argdown", "objections.argdown"]) {
+  copyFileSync(new URL(`fixtures/include/${name}`, import.meta.url), path.join(includeDir, name));
+}
+const includeFile = (name: string) => path.join(includeDir, name);
+const includeUri = (name: string) => pathToFileURL(includeFile(name)).href;
 
 let server: ChildProcess;
 let rpc: MessageConnection;
@@ -153,6 +162,98 @@ test("an edit with an error keeps the last map and reports the error", async () 
   });
   expect(state.dot).toBe(before);
   expect(state.errors[0].line).toBe(23);
+});
+
+// The next render event after `count` events had arrived.
+const nextRender = (count: number) =>
+  eventually(() => {
+    const s = events.slice(count).find((e) => e.event === "render");
+    if (!s) throw new Error("no render yet");
+    return s.data;
+  });
+
+// The SVG id of the node whose tooltip starts with `text`.
+const nodeId = (dot: string, text: string) => dot.match(new RegExp(`(n\\d+) \\[[^\\n]*tooltip="${text}`))?.[1];
+
+const open = (uri: string, text: string) =>
+  rpc.sendNotification("textDocument/didOpen", { textDocument: { uri, languageId: "argdown", version: 1, text } });
+
+test("a root renders with the files it includes", async () => {
+  const count = events.length;
+  await open(includeUri("main.argdown"), readFileSync(includeFile("main.argdown"), "utf8"));
+  const state = await nextRender(count);
+  expect(state.file).toBe(includeFile("main.argdown"));
+  expect(state.errors).toEqual([]);
+  expect(nodeId(state.dot, "Many people")).toBeDefined();
+});
+
+test("opening a part the root includes keeps the root up", async () => {
+  const count = events.length;
+  await open(includeUri("part.argdown"), readFileSync(includeFile("part.argdown"), "utf8"));
+  expect((await nextRender(count)).file).toBe(includeFile("main.argdown"));
+});
+
+test("hover in a part describes its node", async () => {
+  const hover: any = await rpc.sendRequest("textDocument/hover", {
+    textDocument: { uri: includeUri("part.argdown") },
+    position: { line: 4, character: 3 },
+  });
+  expect(hover.contents.value).toBe("**\\<Purr\\>**: Cats purr when they are happy.");
+});
+
+test("clicking a node defined in a part opens the part", async () => {
+  const purr = nodeId(last("render").dot, "Cats purr")!;
+  const count = shown.length;
+  await fetch(`${url}/click`, { method: "POST", body: JSON.stringify({ svgId: purr }) });
+  await eventually(() => expect(shown).toHaveLength(count + 1));
+  expect(shown.at(-1)).toMatchObject({ uri: includeUri("part.argdown"), selection: { start: { line: 4, character: 0 } } });
+});
+
+test("editing an open part re-renders the root", async () => {
+  const count = events.length;
+  await rpc.sendNotification("textDocument/didChange", {
+    textDocument: { uri: includeUri("part.argdown"), version: 2 },
+    contentChanges: [{ text: `${readFileSync(includeFile("part.argdown"), "utf8")}\n[Fluffy]: Cats are fluffy.\n  +> [Great]\n` }],
+  });
+  const state = await nextRender(count);
+  expect(state.file).toBe(includeFile("main.argdown"));
+  expect(nodeId(state.dot, "Cats are fluffy")).toBeDefined();
+});
+
+test("an error in a part is reported in the part's file", async () => {
+  const count = events.length;
+  await rpc.sendNotification("textDocument/didChange", {
+    textDocument: { uri: includeUri("part.argdown"), version: 3 },
+    contentChanges: [{ text: `${readFileSync(includeFile("part.argdown"), "utf8")}\n<Broken>\n\n(1) a\n(2) b\n` }],
+  });
+  const state = await nextRender(count);
+  expect(state.file).toBe(includeFile("main.argdown"));
+  expect(state.errors).toEqual([expect.objectContaining({ file: includeFile("part.argdown"), line: 17 })]);
+  await rpc.sendNotification("textDocument/didChange", {
+    textDocument: { uri: includeUri("part.argdown"), version: 4 },
+    contentChanges: [{ text: readFileSync(includeFile("part.argdown"), "utf8") }],
+  });
+});
+
+test("writing an included file that isn't open re-renders the root", async () => {
+  await eventually(() => expect(last("render").errors).toEqual([]));
+  const count = events.length;
+  writeFileSync(
+    includeFile("objections.argdown"),
+    `${readFileSync(includeFile("objections.argdown"), "utf8")}\n[Cute]: Cats are cute.\n  +> [Great]\n`,
+  );
+  const state = await nextRender(count);
+  expect(state.file).toBe(includeFile("main.argdown"));
+  expect(nodeId(state.dot, "Cats are cute")).toBeDefined();
+});
+
+test("opening a file no root includes renders it alone", async () => {
+  const alone = path.join(includeDir, "alone.argdown");
+  const count = events.length;
+  await open(pathToFileURL(alone).href, "[Alone]: On its own.\n  + <Why>: Because.\n");
+  const state = await nextRender(count);
+  expect(state.file).toBe(alone);
+  expect(nodeId(state.dot, "On its own")).toBeDefined();
 });
 
 test("`port` finds the running preview", () => {

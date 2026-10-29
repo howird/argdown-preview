@@ -1,4 +1,5 @@
-// Runs the Argdown pipeline the CLI's `argdown map` runs, on text held in memory.
+// Runs the Argdown pipeline the CLI's `argdown map` runs, on text held in memory, after expanding
+// `@include`s.
 import {
   ArgdownApplication,
   ArgumentSelectionPlugin,
@@ -18,6 +19,7 @@ import {
   StatementSelectionPlugin,
 } from "@argdown/core";
 import { buildIndex, MapIndex } from "../shared/locate.js";
+import { expand, Read, toSource } from "./include.js";
 
 const app = new ArgdownApplication();
 app.addPlugin(new ParserPlugin(), "parse-input");
@@ -37,14 +39,26 @@ app.addPlugin(new DotExportPlugin(), "export-dot");
 const PROCESS = ["parse-input", "build-model", "build-map", "transform-closed-groups", "colorize", "export-dot"];
 
 export interface RenderError {
+  // The file the error is in, when it is known.
+  uri?: string;
   line?: number;
   column?: number;
   message: string;
 }
 
+// `includes` is every file the root included, whether or not the map rendered. A map can render
+// with errors, from includes that failed.
 export type Rendered =
-  | { ok: true; dot: string; vizJs: Record<string, unknown>; index: MapIndex; response: IArgdownResponse }
-  | { ok: false; errors: RenderError[] };
+  | {
+      ok: true;
+      dot: string;
+      vizJs: Record<string, unknown>;
+      index: MapIndex;
+      response: IArgdownResponse;
+      includes: Set<string>;
+      errors: RenderError[];
+    }
+  | { ok: false; errors: RenderError[]; includes: Set<string> };
 
 // Plugins mutate the request, so each render gets its own copy. A .js config may hold functions,
 // which can't be cloned; those configs are copied one level deep.
@@ -58,34 +72,49 @@ const clone = (config: IArgdownRequest): IArgdownRequest => {
   }
 };
 
-// `config` is the argdown.config.* request; frontmatter in `input` overrides it, as in the CLI.
-export const render = (input: string, config: IArgdownRequest = {}): Rendered => {
+// `config` is the argdown.config.* request; the root's frontmatter overrides it, as in the CLI.
+export const render = (rootUri: string, read: Read, config: IArgdownRequest = {}): Rendered => {
+  const expanded = expand(rootUri, read);
+  const { segments, includes } = expanded;
   const request: IArgdownRequest = {
     ...clone(config),
-    input,
+    input: expanded.text,
     process: PROCESS,
     throwExceptions: false,
     logLevel: "none",
   };
+  const errors: RenderError[] = [...expanded.errors];
   let response: IArgdownResponse;
   try {
     response = app.run(request);
   } catch (e) {
-    return { ok: false, errors: [{ message: e instanceof Error ? e.message : String(e) }] };
+    errors.push({ message: e instanceof Error ? e.message : String(e) });
+    return { ok: false, errors, includes };
   }
-  const errors: RenderError[] = (response.parserErrors ?? []).map((e: any) => ({
-    line: e.token?.startLine,
-    column: e.token?.startColumn,
-    message: e.message,
-  }));
+  const parserErrors: RenderError[] = (response.parserErrors ?? []).map((e: any) => {
+    const line: number | undefined = e.token?.startLine;
+    // The end-of-input token has no position.
+    return !Number.isFinite(line)
+      ? { message: e.message }
+      : { ...toSource(segments, line!), column: e.token?.startColumn, message: e.message };
+  });
+  errors.push(...parserErrors);
   // A failed parse makes every later plugin throw too; those add nothing.
-  if (errors.length === 0) {
+  if (parserErrors.length === 0) {
     for (const e of response.exceptions ?? []) {
       errors.push({ message: e.message });
     }
   }
-  if (errors.length > 0 || !response.dot || !response.map) {
-    return { ok: false, errors: errors.length > 0 ? errors : [{ message: "no map produced" }] };
+  if (parserErrors.length > 0 || (response.exceptions ?? []).length > 0 || !response.dot || !response.map) {
+    return { ok: false, errors: errors.length > 0 ? errors : [{ message: "no map produced" }], includes };
   }
-  return { ok: true, dot: response.dot, vizJs: (request as any).vizJs ?? {}, index: buildIndex(response), response };
+  return {
+    ok: true,
+    dot: response.dot,
+    vizJs: (request as any).vizJs ?? {},
+    index: buildIndex(response, segments),
+    response,
+    includes,
+    errors,
+  };
 };

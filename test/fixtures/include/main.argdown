@@ -1,0 +1,16 @@
+===
+title: Cats
+===
+
+# Cats
+
+## Pros
+
+[Great]: Cats are great.
+  + <Purr>
+
+@include(part.argdown)
+
+## Cons
+
+@include(objections.argdown)
