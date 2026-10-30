@@ -224,6 +224,19 @@ document.addEventListener("click", (e) => {
   if (!hiddenList.contains(e.target as Node) && e.target !== hiddenButton) hiddenList.hidden = true;
 });
 
+container.addEventListener(
+  "wheel",
+  (e) => {
+    const { svg, zoom, state } = map.zoomManager;
+    if (e.ctrlKey || !svg || !zoom) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? container.clientHeight : 1;
+    zoom.translateBy(svg, (-e.deltaX * unit) / state.scale, (-e.deltaY * unit) / state.scale);
+  },
+  { capture: true, passive: false },
+);
+
 const fit = () => map.zoomManager.showAllAndCenterMap();
 
 const exportSvg = () => {
